@@ -1,0 +1,38 @@
+[
+  {
+    "id": "7r80",
+    "pdb": "examples/7r80.pdb",
+    "beta_chain": "B",
+    "alpha_chain": "A",
+    "antigen_chains": [
+      "E",
+      "C",
+      "D"
+    ],
+    "native_cdr3": "ASSYGTGINYGYT"
+  },
+  {
+    "id": "7n5c",
+    "pdb": "examples/7n5c.pdb",
+    "beta_chain": "E",
+    "alpha_chain": "D",
+    "antigen_chains": [
+      "C",
+      "A",
+      "B"
+    ],
+    "native_cdr3": "ASSFGREQY"
+  },
+  {
+    "id": "6zkw",
+    "pdb": "examples/6zkw.pdb",
+    "beta_chain": "E",
+    "alpha_chain": "D",
+    "antigen_chains": [
+      "C",
+      "A",
+      "B"
+    ],
+    "native_cdr3": "ASSYSIRGSRGEQF"
+  }
+]

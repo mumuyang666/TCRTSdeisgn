@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.ipynb_checkpoints/
+
+# run outputs
+results/
+out/
+*_result*/
+
+# keep the released weights, ignore stray checkpoints
+*.ckpt
+!weights/*.pt
+
+.DS_Store
+.vscode/
+.idea/

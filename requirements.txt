@@ -1,0 +1,19 @@
+# Core inference dependencies.
+#
+# torch-scatter must match your torch/CUDA build. Install it from the official
+# wheel index rather than plain pip, e.g. for torch 2.2.0 + CUDA 12.1:
+#
+#   pip install torch-scatter -f https://data.pyg.org/whl/torch-2.2.0+cu121.html
+#
+# Tested with python 3.9, torch 2.2.0+cu121 and torch 1.12.1.
+
+torch>=1.12
+torch-scatter>=2.0.9
+numpy>=1.21
+scipy>=1.7
+biopython>=1.79
+tqdm
+
+# Optional, only needed by scripts/prepare_pdb.py to renumber structures into
+# IMGT. Install via conda:  conda install -c bioconda anarci
+# anarci
