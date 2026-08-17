@@ -4,8 +4,8 @@
 
 Single complex::
 
-    python design.py --pdb examples/7r80.pdb \\
-        --beta B --alpha A --antigen E C D \\
+    python design.py --pdb examples/7n2r.pdb \\
+        --beta F --alpha D --antigen C A B \\
         --out_dir out
 
 Batch (JSON list or JSON-lines, see examples/inputs.json)::

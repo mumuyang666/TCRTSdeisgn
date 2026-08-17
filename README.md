@@ -7,7 +7,19 @@ regenerates both its **amino acid sequence** and its **full-atom 3D structure**
 in one pass, iteratively refining the loop and its docking pose against the
 epitope.
 
+> **Coming soon.** A script that builds the complex directly from a pMHC
+> sequence and a TCR framework sequence — no input structure required — is in
+> preparation and will be released shortly.
 
+---
+
+## Citation
+
+> TCRTSdesign: End-to-End Co-Design of Antigen-Specific TCR Sequences and
+> Structures. In: *Proceedings of the 32nd ACM SIGKDD Conference on Knowledge
+> Discovery and Data Mining V.2* (KDD 2026). Jeju Island, Republic of Korea;
+> 2026:12468-12479.
+> [[paper]](https://dl.acm.org/doi/pdf/10.1145/3770855.3818991)
 
 ---
 
@@ -37,17 +49,16 @@ Expected output on GPU (seed 2023):
 
 ```
 id    designed             native               conf
-7r80  ASSLRGGGTDEQY        ASSYGTGINYGYT        0.7583
-7n5c  ASSLGGEQY            ASSFGREQY            0.4609
-6zkw  ASSDRLGSSNNTLY       ASSYSIRGSRGEQF       0.6540
+7n5c  ASSLGGEQY            ASSFGREQY            0.4776
+7n2r  ASSLRRRSTDTQY        ASSVATYSTDTQY        0.6157
+7nme  ASSAEYEQY            ASSLHHEQY            0.3652
 ```
 
 CPU works (`--gpu -1`), roughly 15 s per complex versus under 1 s on a GPU.
-Expect small differences from the numbers above on CPU — float accumulation
-order differs between backends, and after three co-design rounds that is
-enough to flip a low-confidence position (on `6zkw` the CPU run gives
-`ASSDDLGSSNNTLY`, one residue off). Results are reproducible for a fixed
-seed, input and device, not across devices.
+Confidence scores shift slightly on CPU (float accumulation order differs
+between backends) and can also shift if you change `--batch_size`, since the
+neighbour graph is built per batch. Results are reproducible for a fixed seed,
+input, device and batch size.
 
 ---
 
@@ -58,8 +69,8 @@ IMGT-renumbered. Files downloaded straight from the RCSB usually are not.
 
 ```bash
 # needs ANARCI:  conda install -c bioconda anarci
-python scripts/prepare_pdb.py --pdb 7r80.pdb \
-    --beta B --alpha A --antigen E C D --out 7r80_imgt.pdb
+python scripts/prepare_pdb.py --pdb 7n2r.pdb \
+    --beta F --alpha D --antigen C A B --out 7n2r_imgt.pdb
 ```
 
 This renumbers the file, prints all six detected CDRs so you can sanity check
@@ -78,8 +89,8 @@ including the MHC is cheap and generally helps.
 ### Single complex
 
 ```bash
-python design.py --pdb examples/7r80.pdb \
-    --beta B --alpha A --antigen E C D \
+python design.py --pdb examples/7n2r.pdb \
+    --beta F --alpha D --antigen C A B \
     --out_dir results
 ```
 
@@ -94,11 +105,11 @@ python design.py --inputs examples/inputs.json --out_dir results
 ```json
 [
   {
-    "id": "7r80",
-    "pdb": "examples/7r80.pdb",
-    "beta_chain": "B",
-    "alpha_chain": "A",
-    "antigen_chains": ["E", "C", "D"]
+    "id": "7n2r",
+    "pdb": "examples/7n2r.pdb",
+    "beta_chain": "F",
+    "alpha_chain": "D",
+    "antigen_chains": ["C", "A", "B"]
   }
 ]
 ```
@@ -114,10 +125,10 @@ setup_seed(2023)
 model = load_model('weights/tcrdesign_cdr3.pt', device='cuda:0')
 
 results = design(model, [{
-    'pdb': 'examples/7r80.pdb',
-    'beta_chain': 'B',
-    'alpha_chain': 'A',
-    'antigen_chains': ['E', 'C', 'D'],
+    'pdb': 'examples/7n2r.pdb',
+    'beta_chain': 'F',
+    'alpha_chain': 'D',
+    'antigen_chains': ['C', 'A', 'B'],
 }], out_dir='results')
 
 print(results[0]['cdr_seq'])     # designed CDR3
@@ -151,11 +162,11 @@ Each record carries the designed sequence, the native sequence, a confidence
 score and the output paths:
 
 ```json
-{"id": "7r80", "cdr_type": ["H3"], "confidence": 0.7583,
- "cdr_seq_H3": "ASSLRGGGTDEQY", "native_seq_H3": "ASSYGTGINYGYT",
- "cdr_seq": "ASSLRGGGTDEQY", "native_seq": "ASSYGTGINYGYT",
- "out_pdb": "results/7r80.pdb", "reference_pdb": "results/7r80_reference.pdb",
- "heavy_chain": "B", "light_chain": "A", "antigen_chains": ["E", "C", "D"]}
+{"id": "7n2r", "cdr_type": ["H3"], "confidence": 0.6157,
+ "cdr_seq_H3": "ASSLRRRSTDTQY", "native_seq_H3": "ASSVATYSTDTQY",
+ "cdr_seq": "ASSLRRRSTDTQY", "native_seq": "ASSVATYSTDTQY",
+ "out_pdb": "results/7n2r.pdb", "reference_pdb": "results/7n2r_reference.pdb",
+ "heavy_chain": "F", "light_chain": "D", "antigen_chains": ["C", "A", "B"]}
 ```
 
 `confidence` is the mean per-residue maximum softmax probability over the
@@ -177,6 +188,9 @@ Reports amino acid recovery (AAR), recovery restricted to antigen-contacting
 positions (CAAR), and CDR CA-RMSD both superposed and in place. On the
 18-complex held-out test set the released weights give AAR 0.512, CAAR 0.308,
 superposed CDR3 RMSD 1.62 A.
+
+The three bundled examples are among the better cases in that test set (mean
+AAR 0.712), so treat them as a smoke test rather than a benchmark.
 
 Only numpy and biopython are required. TMscore, LDDT and DockQ need external
 binaries and are out of scope here.

@@ -6,8 +6,8 @@ The model locates CDR3 through IMGT residue numbering, so an input PDB must be
 renumbered before use. Structures taken straight from the RCSB are typically
 *not* IMGT-numbered.
 
-    python scripts/prepare_pdb.py --pdb 7r80.pdb --beta B --alpha A \\
-        --antigen E C D --out 7r80_imgt.pdb
+    python scripts/prepare_pdb.py --pdb 7n2r.pdb --beta F --alpha D \\
+        --antigen C A B --out 7n2r_imgt.pdb
 
 Requires ANARCI (``conda install -c bioconda anarci``). If ANARCI is not
 available, renumber the file with any other IMGT tool and then run this script
