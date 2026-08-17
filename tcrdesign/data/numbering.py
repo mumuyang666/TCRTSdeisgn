@@ -2,9 +2,9 @@
 # -*- coding:utf-8 -*-
 """IMGT / Chothia numbering definitions.
 
-TCR chains are mapped onto the antibody numbering scheme used by dyMEAN:
-the TCR beta chain plays the role of the heavy chain and the alpha chain
-that of the light chain. CDR3 therefore corresponds to ``H3``.
+TCR chains are mapped onto the antibody numbering scheme: the TCR beta chain
+plays the role of the heavy chain and the alpha chain that of the light chain.
+CDR3 therefore corresponds to ``H3``.
 
 Ranges are ``[start, end]`` residue ids, both ends inclusive.
 """

@@ -27,7 +27,7 @@ from torch.utils.data import DataLoader
 from .data.dataset import ComplexDataset, collate_fn
 from .data.pdb_utils import VOCAB, Residue, Peptide, Protein, AgAbComplex
 from .utils.logger import print_log
-from .model.dymean import dyMEANModel
+from .model.network import TCRDesignModel
 
 # Hyper-parameters of the released checkpoint. Only used as a fallback when a
 # checkpoint carries no config (e.g. a bare state_dict).
@@ -54,7 +54,7 @@ DEFAULT_CONFIG = {
 # --------------------------------------------------------------------------- #
 # model loading
 # --------------------------------------------------------------------------- #
-def load_model(ckpt: str, device: Union[str, torch.device] = 'cpu') -> dyMEANModel:
+def load_model(ckpt: str, device: Union[str, torch.device] = 'cpu') -> TCRDesignModel:
     """Load a released checkpoint.
 
     Accepts both formats:
@@ -73,7 +73,7 @@ def load_model(ckpt: str, device: Union[str, torch.device] = 'cpu') -> dyMEANMod
     if isinstance(obj, dict) and 'state_dict' in obj:
         config = dict(DEFAULT_CONFIG)
         config.update(obj.get('config', {}))
-        model = dyMEANModel(**config)
+        model = TCRDesignModel(**config)
         missing, unexpected = model.load_state_dict(obj['state_dict'], strict=False)
         # Buffers are rebuilt in __init__ from VOCAB, so a mismatch there is
         # harmless; a mismatch in learned parameters is not.
@@ -83,8 +83,8 @@ def load_model(ckpt: str, device: Union[str, torch.device] = 'cpu') -> dyMEANMod
             raise RuntimeError(f'checkpoint does not match the architecture: {bad[:8]}')
     elif isinstance(obj, torch.nn.Module):
         model = obj
-        # drop training-only attributes if the checkpoint came from a
-        # teacher-student run; they are never touched during generation
+        # drop training-only attributes some checkpoints carry; they are never
+        # touched during generation
         for attr in ('teacher_distributions', 'teacher_dist_path', 'epitope_csv_path'):
             if hasattr(model, attr):
                 delattr(model, attr)
@@ -179,7 +179,7 @@ def load_complexes(specs: List[Dict], numbering: str = 'imgt') -> List[AgAbCompl
 # generation
 # --------------------------------------------------------------------------- #
 @torch.no_grad()
-def design(model: dyMEANModel,
+def design(model: TCRDesignModel,
            specs: List[Dict],
            out_dir: Optional[str] = None,
            cdr: Optional[Sequence[str]] = None,

@@ -183,22 +183,6 @@ binaries and are out of scope here.
 
 ---
 
-## Generating multiple candidates
-
-```bash
-python design.py --inputs examples/inputs.json --out_dir results --n_samples 10
-```
-
-Be aware of what this does and does not vary. Sequence decoding is
-**deterministic argmax**, so the designed sequence is generally identical
-across seeds; only the random initialisation of the docking pose changes, which
-perturbs the structure and the confidence score slightly. `--n_samples` is
-therefore useful for assessing structural stability, **not** for sampling
-sequence diversity. For genuinely diverse sequences you would need to sample
-from the residue logits, which this release does not expose.
-
----
-
 ## Layout
 
 ```
@@ -208,7 +192,7 @@ weights/
 tcrdesign/
   infer.py                load_model / design
   model/
-    dymean.py             the network (inference only)
+    network.py            the network (inference only)
     am_egnn.py            equivariant graph layers
     am_enc.py             encoder over the complex + interface
   data/
@@ -250,30 +234,13 @@ The CLI uses `--beta` / `--alpha`; `summary.json` reports `heavy_chain` /
   tied to a torch version. `scripts/export_weights.py` regenerates it from a
   raw training checkpoint. `load_model` also accepts a pickled `nn.Module`
   checkpoint as a fallback.
-- **Training vs inference.** The weights were fitted with a teacher-student KL
-  term against an epitope-conditioned sequence model. That term only ever
-  affected the training loss; generation is a single self-contained network,
-  which is why no teacher artefacts ship here and results are unchanged.
 - **Held-out performance.** AAR around 0.51 means roughly half the CDR3
   positions are recovered exactly. Treat outputs as hypotheses for
   experimental or computational screening, not as confident predictions.
 - **Binding is not predicted.** The model designs a loop compatible with the
   given interface geometry. It returns no affinity estimate, and a design is
   not evidence that the TCR will bind.
-- **The input pose matters.** Generation is conditioned on the supplied
-  complex, so the TCR-pMHC docking geometry must be reasonable. Errors in the
-  input pose propagate into the design.
 - **Determinism is per-device.** Fixed seed, fixed input and fixed device
   reproduce results exactly. CPU versus GPU, different GPU architectures, or
   different torch builds can shift confidences and occasionally flip a
   low-confidence residue.
-
----
-
-## Acknowledgements
-
-The network architecture and much of the structure-handling code derive from
-[dyMEAN](https://github.com/THUNLP-MT/dyMEAN) (Kong et al., *End-to-End
-Full-Atom Antibody Design*, ICML 2023), released by THUNLP under the MIT
-license. This work retargets that antibody design framework to TCR-pMHC
-complexes. The original license is retained in `LICENSE`.

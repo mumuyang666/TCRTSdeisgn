@@ -2,11 +2,6 @@
 # -*- coding:utf-8 -*-
 """TCR CDR3 sequence-structure co-design model (inference only).
 
-This is the *student* network: the architecture is identical to the one used
-during training, with the teacher-student KL distillation term removed since
-it only ever affected the training loss. Generation therefore needs no
-teacher distributions and no epitope table.
-
 Only ``sample()`` is provided; the training ``forward()`` lives in the
 research repository.
 """
@@ -28,7 +23,7 @@ from .am_enc import AMEncoder
 from .am_egnn import AMEGNN
 
 
-class dyMEANModel(nn.Module):
+class TCRDesignModel(nn.Module):
     def __init__(self, embed_size, hidden_size, n_channel, num_classes,
                  mask_id=VOCAB.get_mask_idx(), k_neighbors=9, bind_dist_cutoff=6,
                  n_layers=3, iter_round=3, dropout=0.1, struct_only=False,
@@ -378,7 +373,3 @@ class dyMEANModel(nn.Module):
         if return_hidden:
             return gen_X, gen_S, metric, H
         return gen_X, gen_S, metric
-
-
-# Public alias
-TCRDesignModel = dyMEANModel
