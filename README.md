@@ -33,7 +33,7 @@ Verify:
 python design.py --inputs examples/inputs.json --out_dir results
 ```
 
-Expected output (deterministic, seed 2023):
+Expected output on GPU (seed 2023):
 
 ```
 id    designed             native               conf
@@ -43,6 +43,11 @@ id    designed             native               conf
 ```
 
 CPU works (`--gpu -1`), roughly 15 s per complex versus under 1 s on a GPU.
+Expect small differences from the numbers above on CPU — float accumulation
+order differs between backends, and after three co-design rounds that is
+enough to flip a low-confidence position (on `6zkw` the CPU run gives
+`ASSDDLGSSNNTLY`, one residue off). Results are reproducible for a fixed
+seed, input and device, not across devices.
 
 ---
 
@@ -258,8 +263,10 @@ The CLI uses `--beta` / `--alpha`; `summary.json` reports `heavy_chain` /
 - **The input pose matters.** Generation is conditioned on the supplied
   complex, so the TCR-pMHC docking geometry must be reasonable. Errors in the
   input pose propagate into the design.
-- **Determinism.** Fixed seed, fixed input and fixed device reproduce results
-  exactly. Numbers may drift slightly across GPU architectures or torch builds.
+- **Determinism is per-device.** Fixed seed, fixed input and fixed device
+  reproduce results exactly. CPU versus GPU, different GPU architectures, or
+  different torch builds can shift confidences and occasionally flip a
+  low-confidence residue.
 
 ---
 
