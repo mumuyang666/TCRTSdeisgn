@@ -25,6 +25,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from .data.dataset import ComplexDataset, collate_fn
+from .data.from_sequence import SequenceDesignDataset
 from .data.pdb_utils import VOCAB, Residue, Peptide, Protein, AgAbComplex
 from .utils.logger import print_log
 from .model.network import TCRDesignModel
@@ -274,6 +275,112 @@ def design(model: TCRDesignModel,
 
             results.append(record)
             idx += 1
+
+    if out_dir is not None:
+        summary = os.path.join(out_dir, 'summary.json')
+        with open(summary, 'w') as fout:
+            for record in results:
+                fout.write(json.dumps(record) + '\n')
+        print_log(f'{len(results)} designs written to {out_dir}')
+
+    return results
+
+
+# --------------------------------------------------------------------------- #
+# generation from sequence (no input TCR structure)
+# --------------------------------------------------------------------------- #
+@torch.no_grad()
+def design_from_sequence(model: TCRDesignModel,
+                         specs: List[Dict],
+                         out_dir: Optional[str] = None,
+                         cdr: Optional[Sequence[str]] = None,
+                         batch_size: int = 8,
+                         num_workers: int = 0,
+                         auto_detect_cdrs: bool = False) -> List[Dict]:
+    """Design CDR3 from a pMHC structure and TCR framework *sequences*.
+
+    Unlike :func:`design` this needs no docked TCR structure: the TCR is
+    supplied as alpha/beta sequences with the CDR3 to design marked by ``-``,
+    and the docking pose is generated against the given epitope.
+
+    Args:
+        model: loaded via :func:`load_model`.
+        specs: see :class:`tcrdesign.data.from_sequence.SequenceDesignDataset`.
+        out_dir: where to write generated PDBs. ``None`` skips writing.
+        cdr: CDRs to design; defaults to the model's own ``cdr_type``.
+        auto_detect_cdrs: take the CDR from the IMGT numbering instead of the
+            ``-`` mask.
+
+    Returns one record per design with the designed CDR sequence, the
+    confidence and the output path. There is no native sequence to report.
+    """
+    cdr_type = cdr if cdr is not None else getattr(model, 'cdr_type', ['H3'])
+    if isinstance(cdr_type, str):
+        cdr_type = [cdr_type]
+    paratope = getattr(model, 'paratope', 'H3')
+    device = next(model.parameters()).device
+
+    if not specs:
+        return []
+
+    dataset = SequenceDesignDataset(specs, cdr=cdr_type, paratope=paratope,
+                                    auto_detect_cdrs=auto_detect_cdrs)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False,
+                        num_workers=num_workers,
+                        collate_fn=SequenceDesignDataset.collate_fn)
+
+    if out_dir is not None:
+        os.makedirs(out_dir, exist_ok=True)
+
+    results = []
+    for batch in loader:
+        cplxes = batch.pop('cplxes')
+        batch.pop('pdb_id', None)
+        batch = {k: (v.to(device) if hasattr(v, 'to') else v) for k, v in batch.items()}
+        lengths = batch['lengths']
+
+        X, S, pmets = model.sample(**batch)
+        X, S, pmets = X.tolist(), S.tolist(), pmets.tolist()
+
+        batch_id = torch.zeros(sum(lengths.tolist()), dtype=torch.long)
+        batch_id[torch.cumsum(lengths.cpu(), dim=0)[:-1]] = 1
+        batch_id = batch_id.cumsum(dim=0).tolist()
+
+        X_list, S_list, cur = [], [], -1
+        for i, bid in enumerate(batch_id):
+            if bid != cur:
+                cur = bid
+                X_list.append([])
+                S_list.append([])
+            X_list[-1].append(X[i])
+            S_list[-1].append(S[i])
+
+        for i, (x, s) in enumerate(zip(X_list, S_list)):
+            ori_cplx = cplxes[i]
+            cplx = to_cplx(ori_cplx, x, s)
+            name = cplx.get_id().split('(')[0]
+
+            record = {
+                'id': name,
+                'cdr_type': list(cdr_type),
+                'confidence': pmets[i],
+            }
+            for c in cdr_type:
+                record[f'cdr_seq_{c}'] = cplx.get_cdr(c).get_seq()
+            if len(cdr_type) == 1:
+                record['cdr_seq'] = record[f'cdr_seq_{cdr_type[0]}']
+            record['beta_seq'] = cplx.get_heavy_chain().get_seq()
+            record['alpha_seq'] = cplx.get_light_chain().get_seq()
+
+            if out_dir is not None:
+                out_pdb = os.path.join(out_dir, name + '.pdb')
+                cplx.to_pdb(out_pdb)
+                record['out_pdb'] = out_pdb
+                record['heavy_chain'] = cplx.heavy_chain
+                record['light_chain'] = cplx.light_chain
+                record['antigen_chains'] = cplx.antigen.get_chain_names()
+
+            results.append(record)
 
     if out_dir is not None:
         summary = os.path.join(out_dir, 'summary.json')

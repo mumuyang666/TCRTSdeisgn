@@ -14,6 +14,10 @@ scipy>=1.7
 biopython>=1.79
 tqdm
 
-# Optional, only needed by scripts/prepare_pdb.py to renumber structures into
-# IMGT. Install via conda:  conda install -c bioconda anarci
+# ANARCI assigns IMGT numbering. Required by:
+#   scripts/prepare_pdb.py   renumbering input structures
+#   design_seq.py            numbering the TCR sequences
+# design.py does not need it if your PDBs are already IMGT-renumbered.
+# Install via conda (it also pulls in the hmmer binaries ANARCI shells out to):
+#   conda install -c bioconda anarci hmmer
 # anarci

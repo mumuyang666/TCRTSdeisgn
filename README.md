@@ -7,9 +7,16 @@ regenerates both its **amino acid sequence** and its **full-atom 3D structure**
 in one pass, iteratively refining the loop and its docking pose against the
 epitope.
 
-> **Coming soon.** A script that builds the complex directly from a pMHC
-> sequence and a TCR framework sequence — no input structure required — is in
-> preparation and will be released shortly.
+Two entry points:
+
+| script | you provide | use when |
+|---|---|---|
+| `design.py` | a docked TCR-pMHC complex | you already have a TCR pose to redesign |
+| `design_seq.py` | a pMHC structure, an epitope, and TCR framework **sequences** | you have no TCR structure |
+
+`design_seq.py` needs no TCR coordinates at all: the model rebuilds the whole
+TCR from a framework template, so the alpha/beta sequences with the CDR3 masked
+out are enough.
 
 ---
 
@@ -37,6 +44,9 @@ pip install torch==2.2.0 --index-url https://download.pytorch.org/whl/cu121
 pip install torch-scatter -f https://data.pyg.org/whl/torch-2.2.0+cu121.html
 
 pip install -r requirements.txt
+
+# for design_seq.py, and for renumbering your own PDBs
+conda install -c bioconda anarci hmmer -y
 ```
 
 Verify:
@@ -62,10 +72,25 @@ input, device and batch size.
 
 ---
 
+Then, for the sequence-input path:
+
+```bash
+python design_seq.py --inputs examples/inputs_seq.json --out_dir results_seq
+```
+
+```
+id        designed              conf
+7n2r_seq  ASSSLRDTTYEQY         0.6473
+```
+
+---
+
 ## Input requirements
 
 The model finds CDR3 through **IMGT residue numbering**, so input PDBs must be
-IMGT-renumbered. Files downloaded straight from the RCSB usually are not.
+IMGT-renumbered. Files downloaded straight from the RCSB usually are not. This
+applies to `design.py`; `design_seq.py` numbers the TCR sequences itself, and
+only reads the pMHC chains from the structure, whose numbering is untouched.
 
 ```bash
 # needs ANARCI:  conda install -c bioconda anarci
@@ -136,7 +161,7 @@ print(results[0]['native_seq'])  # native CDR3, for reference
 print(results[0]['out_pdb'])     # generated full-atom structure
 ```
 
-### Designing the alpha chain CDR3
+### Designing the alpha chain CDR3 (structure input)
 
 The released checkpoint was trained on the **beta** chain CDR3 (`H3` in the
 internal antibody-style naming). You can point it at other loops with `--cdr`,
@@ -145,6 +170,109 @@ but note this is off-distribution for these weights:
 ```bash
 python design.py --inputs examples/inputs.json --cdr L3 --out_dir results_alpha
 ```
+
+---
+
+## Designing without a TCR structure
+
+`design_seq.py` takes a pMHC structure, a definition of which pMHC residues form
+the epitope, and the two TCR sequences with the CDR3 replaced by `-`. This needs
+ANARCI (`conda install -c bioconda anarci`) to assign IMGT numbering to the bare
+sequences, and `hmmscan` must be on `PATH`.
+
+### 1. Define the epitope
+
+The model conditions on 48 target residues. `scripts/get_epitope.py` writes them
+out in two ways.
+
+From the peptide alone — takes the whole peptide chain, then pads with the
+nearest MHC residues:
+
+```bash
+python scripts/get_epitope.py --pdb examples/7n2r.pdb \
+    --peptide C --mhc A B --out examples/7n2r_epitope.json
+```
+
+Mimicking a binder already in the structure — takes the pMHC residues closest to
+a reference TCR, which reproduces the interface `design.py` would have used:
+
+```bash
+python scripts/get_epitope.py --pdb examples/7n2r.pdb \
+    --receptor C A B --ligand F D --out epitope_iface.json
+```
+
+Both print the selected residues with distances and warn if fewer than 48 were
+found. The definition is plain JSON (`[[chain, [resnum, icode]], ...]`), so you
+can also write or edit one by hand.
+
+### 2. Design
+
+Mark the CDR3 with one `-` per residue you want; the number of dashes sets the
+loop length. Everything outside the dashes is kept exactly as given.
+
+```bash
+python design_seq.py --inputs examples/inputs_seq.json --out_dir results_seq
+```
+
+```
+id        designed              conf
+7n2r_seq  ASSSLRDTTYEQY         0.6473
+```
+
+Or as a single task:
+
+```bash
+python design_seq.py \
+    --pmhc examples/7n2r.pdb --epitope examples/7n2r_epitope.json \
+    --remove_chains F D \
+    --beta  'GVTQTPKHLITATGQRVTLRCSPRSGDLSVYWYQQSLDQGLQFLIQYYNGEERAKGNILERFSAQQFPDLHSELNLSSLELGDSALYFC-------------FGPGTRLTVL' \
+    --alpha 'KQEVTQIPAALSVPEGENLVLNCSFTDSAIYNLQWFRQDPGKGLTSLLLIQSSQREQTSGRLNASLDKSSGRSTLYIAASQPGDSATYLC---------FGSGTKLNVKP' \
+    --id 7n2r_seq --out_dir results_seq
+```
+
+`--remove_chains` drops chains from the input structure, which is how the example
+reuses a full complex file as a pMHC-only input. If your file already contains
+just the peptide and MHC, leave it out.
+
+Instead of dashes you can pass complete sequences and `--auto_detect_cdrs`, which
+takes the loop to redesign from the IMGT numbering and ignores dashes entirely.
+
+Every dashed position is generated, since a dash means no residue was supplied.
+Dashes outside the CDRs named by `--cdr` are generated too, with a warning —
+that is off-distribution for this checkpoint, so give the real residues for any
+loop you want left alone. The example above supplies the native alpha CDR3 and
+masks only the beta CDR3.
+
+### Python API
+
+```python
+from tcrdesign import load_model, design_from_sequence, epitope_from_chains, setup_seed
+
+setup_seed(2023)
+model = load_model('weights/tcrdesign_cdr3.pt', device='cuda:0')
+
+# epitope_from_chains returns (residue, chain, index, distance) tuples
+epitope = [(chain, residue.get_id())
+           for residue, chain, _i, _d
+           in epitope_from_chains('examples/7n2r.pdb', ['C'], ['A', 'B'])]
+
+results = design_from_sequence(model, [{
+    'id': '7n2r_seq',
+    'pmhc_pdb': 'examples/7n2r.pdb',
+    'epitope': epitope,
+    'remove_chains': ['F', 'D'],
+    'beta_seq':  'GVTQTPKHLI...SALYFC' + '-' * 13 + 'FGPGTRLTVL',
+    'alpha_seq': 'KQEVTQIPAA...SATYLCAVSNFNKFYFGSGTKLNVKP',
+}], out_dir='results_seq')
+
+print(results[0]['cdr_seq'])  # designed CDR3
+print(results[0]['out_pdb'])  # generated full complex
+```
+
+The output is a complete TCR-pMHC structure. The epitope you pass is what the
+design is conditioned on, so it changes the result: on the example above, the
+peptide-derived epitope gives `ASSSLRDTTYEQY` while the interface-derived one
+gives `ASSLAGGGTDEQY`.
 
 ---
 
@@ -200,11 +328,12 @@ binaries and are out of scope here.
 ## Layout
 
 ```
-design.py                 CLI entry point
+design.py                 CLI entry point, structure input
+design_seq.py             CLI entry point, sequence input
 weights/
   tcrdesign_cdr3.pt       released weights (beta CDR3, 7.7 MB)
 tcrdesign/
-  infer.py                load_model / design
+  infer.py                load_model / design / design_from_sequence
   model/
     network.py            the network (inference only)
     am_egnn.py            equivariant graph layers
@@ -212,6 +341,8 @@ tcrdesign/
   data/
     pdb_utils.py          PDB parsing, complex/CDR handling, vocabulary
     dataset.py            complex -> model tensors
+    from_sequence.py      pMHC + TCR sequences -> model tensors
+    epitope.py            epitope definitions, selection and IO
     numbering.py          IMGT / Chothia CDR definitions
     framework_templates.py  conserved-position framework initialisation
     renumber.py           ANARCI wrapper
@@ -220,9 +351,13 @@ tcrdesign/
     geometry.py           Kabsch superposition, RMSD
 scripts/
   prepare_pdb.py          IMGT renumbering + validation
+  get_epitope.py          write an epitope definition for design_seq.py
   evaluate.py             AAR / CAAR / RMSD
   export_weights.py       convert a training checkpoint to the release format
 examples/                 three ready-to-run test complexes
+  inputs.json             batch input for design.py
+  inputs_seq.json         batch input for design_seq.py
+  7n2r_epitope.json       example epitope definition
 ```
 
 ### Chain naming
@@ -258,3 +393,12 @@ The CLI uses `--beta` / `--alpha`; `summary.json` reports `heavy_chain` /
   reproduce results exactly. CPU versus GPU, different GPU architectures, or
   different torch builds can shift confidences and occasionally flip a
   low-confidence residue.
+- **The epitope definition drives the result.** With sequence input there is no
+  TCR pose to constrain the docking, so the 48 target residues you select are
+  the entire specification of where the loop should bind. Different epitope
+  definitions on the same pMHC give different designs.
+- **Generated loops are not energy minimised.** Backbone geometry in the
+  designed CDR3 is approximate — CA-CA spacing averages around 3.1-3.2 A against
+  an ideal 3.8 A, for both entry points. Run a force-field relaxation (openmm,
+  Rosetta, or similar) before using the coordinates for anything geometry
+  sensitive.
